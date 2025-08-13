@@ -9,7 +9,8 @@ from langchain_community.document_loaders import (
     PyPDFLoader,                                                                                                                                                                              
     TextLoader,                                                                                                                                                                               
     CSVLoader                                                                                                                                                                                 
-)                                                                                                                                                                                             
+)                            
+from mistralai.client import MistralClient                                                                                                                                                                                                    
 from langchain.text_splitter import RecursiveCharacterTextSplitter                                                                                                                            
 from langchain_mistralai import MistralAIEmbeddings                                                                                                                                           
 from langchain_pinecone import PineconeVectorStore                                                                                                                                            
@@ -25,7 +26,9 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")                                                                                                                                                  
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")                                                                                                                                                
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")                                                                                                                                              
-INDEX_NAME = "opto-fra"                                                                                                                                                                       
+INDEX_NAME = "opto-fra"  
+
+mistral_client = MistralClient(api_key=MISTRAL_API_KEY)       
                                                                                                                                                                                               
 def initialize_pinecone() -> Pinecone:                                                                                                                                                        
     pc = Pinecone(api_key=PINECONE_API_KEY)                                                                                                                                                   
@@ -48,36 +51,20 @@ def encode_image_to_base64(image_bytes: bytes) -> str:
     """Convert image bytes to base64 string for OpenAI API"""                                                                                                                                 
     return base64.b64encode(image_bytes).decode('utf-8')                                                                                                                                      
                                                                                                                                                                                               
-def describe_image_with_openai(image_bytes: bytes, client: OpenAI) -> str:                                                                                                                    
-    """Use OpenAI's vision model to describe an image"""                                                                                                                                      
-    try:                                                                                                                                                                                      
-        base64_image = encode_image_to_base64(image_bytes)                                                                                                                                    
-                                                                                                                                                                                              
-        response = client.chat.completions.create(                                                                                                                                            
-            model="gpt-4o",  # or "gpt-4-vision-preview"                                                                                                                                      
-            messages=[                                                                                                                                                                        
-                {                                                                                                                                                                             
-                    "role": "user",                                                                                                                                                           
-                    "content": [                                                                                                                                                              
-                        {                                                                                                                                                                     
-                            "type": "text",                                                                                                                                                   
-                            "text": "Please provide a detailed description of this image, focusing on key elements, text content if any, charts, diagrams, or any important visual information that would be useful for document search and retrieval."                                                                                                                                      
-                        },                                                                                                                                                                    
-                        {                                                                                                                                                                     
-                            "type": "image_url",                                                                                                                                              
-                            "image_url": {                                                                                                                                                    
-                                "url": f"data:image/jpeg;base64,{base64_image}"                                                                                                               
-                            }                                                                                                                                                                 
-                        }                                                                                                                                                                     
-                    ]                                                                                                                                                                         
-                }                                                                                                                                                                             
-            ],                                                                                                                                                                                
-            max_tokens=500                                                                                                                                                                    
-        )                                                                                                                                                                                     
-        print(f"Image description response: {response.choices[0].message.content}")                                                                                                           
-        return response.choices[0].message.content                                                                                                                                            
-    except Exception as e:                                                                                                                                                                    
-        print(f"Error describing image: {e}")                                                                                                                                                 
+def describe_image_with_mistral(image_bytes: bytes) -> str:                                                                                                                                                                                   
+    """Use Mistral's vision model to describe an image"""                                                                                                                                                                                     
+    try:                                                                                                                                                                                                                                      
+        response = mistral_client.chat(
+            model=os.getenv("MISTRAL_MODEL"),
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Describe the following image in detail."},
+                {"role": "user", "content": {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encode_image_to_base64(image_bytes)}"}}}
+            ]
+        )                                                                                                                                                                                                                                     
+        return response.choices[0].message.content                                                                                                                                                                                            
+    except Exception as e:                                                                                                                                                                                                                    
+        print(f"Error describing image: {e}")                                                                                                                                                                                                 
         return "Image description unavailable"                                                                                                                                                
                                                                                                                                                                                               
 def extract_images_from_pdf(file_path: str) -> List[Tuple[bytes, int, Dict]]:                                                                                                                 
@@ -176,13 +163,13 @@ def load_document_with_images(file_path: str) -> Tuple[List[Document], List[Tupl
                                                                                                                                                                                               
     return documents, images                                                                                                                                                                  
                                                                                                                                                                                               
-def create_image_documents(images: List[Tuple[bytes, Any, Dict]], openai_client: OpenAI) -> List[Document]:                                                                                   
+def create_image_documents(images: List[Tuple[bytes, Any, Dict]]) -> List[Document]:                                                                                   
     """Convert images to Document objects with descriptions"""                                                                                                                                
     image_documents = []                                                                                                                                                                      
                                                                                                                                                                                               
     for img_data, location, metadata in images:                                                                                                                                               
         try:                                                                                                                                                                                  
-            description = describe_image_with_openai(img_data, openai_client)                                                                                                                 
+            description = describe_image_with_mistral(img_data)                                                                                                                 
                                                                                                                                                                                               
             # Create a document for the image description                                                                                                                                     
             image_doc = Document(                                                                                                                                                             
@@ -201,7 +188,7 @@ def create_image_documents(images: List[Tuple[bytes, Any, Dict]], openai_client:
                                                                                                                                                                                               
     return image_documents                                                                                                                                                                    
                                                                                                                                                                                               
-def process_document_with_images(file_path: str, openai_client: OpenAI) -> List[Document]:                                                                                                    
+def process_document_with_images(file_path: str) -> List[Document]:                                                                                                    
     """Process document including both text and image content"""                                                                                                                              
     # Load documents and extract images                                                                                                                                                       
     documents, images = load_document_with_images(file_path)                                                                                                                                  
@@ -211,7 +198,7 @@ def process_document_with_images(file_path: str, openai_client: OpenAI) -> List[
     text_chunks = splitter.split_documents(documents)                                                                                                                                         
                                                                                                                                                                                               
     # Process images and create image documents                                                                                                                                               
-    image_documents = create_image_documents(images, openai_client)                                                                                                                           
+    image_documents = create_image_documents(images)                                                                                                                           
                                                                                                                                                                                               
     # Combine text chunks and image documents                                                                                                                                                 
     all_chunks = text_chunks + image_documents                                                                                                                                                
@@ -238,11 +225,10 @@ def process_and_embed_document(file_path: str, company_name: str) -> str:
     try:                                                                                                                                                                                      
         # Initialize services                                                                                                                                                                 
         initialize_pinecone()                                                                                                                                                                 
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)                                                                                                                                        
                                                                                                                                                                                               
         # Process document                                                                                                                                                                    
         print(f"Processing document: {file_path}")                                                                                                                                            
-        chunks = process_document_with_images(file_path, openai_client)                                                                                                                       
+        chunks = process_document_with_images(file_path)                                                                                                                       
                                                                                                                                                                                               
         # Initialize embeddings                                                                                                                                                               
         embeddings = MistralAIEmbeddings(                                                                                                                                                     

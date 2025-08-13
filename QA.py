@@ -4,7 +4,9 @@ from dotenv import load_dotenv
 from typing import List, Dict                                                                                                                                                                 
 from pinecone import Pinecone                                                                                                                                                                 
 from openai import OpenAI    
-from mistralai.client import MistralClient                                                                                                                                                    
+from mistralai.client import MistralClient    
+import json
+import re                                                                                                                                                
                                                                                                                                                                                               
 load_dotenv()                                                                                                                                                                                 
                                                                                                                                                                                               
@@ -18,9 +20,8 @@ INDEX_NAME = "opto-fra"
 pc = Pinecone(api_key=PINECONE_API_KEY)                                                                                                                                                       
 index = pc.Index(INDEX_NAME, namespace="opto_fra_1")                                                                                                                                                                  
                                                                                                                                                                                               
-# Initialize OpenAI                                                                                                                                                                           
-openai_client = OpenAI(api_key=OPENAI_API_KEY)       
-mistral_client = MistralClient(api_key=MISTRAL_API_KEY)       
+# Initialize                                                                                                                                                                           
+mistral_client = MistralClient(api_key=MISTRAL_API_KEY)    
 
 # Context to be used when expanding the query
 CONTEXT="""
@@ -537,7 +538,6 @@ CONTEXT="""
     TRM-F SCP6: Authorize "Systems"
     TRM-F SCP7: Monitor "Controls"
     ---
-
 """
 def analyze_results(results: List[Dict[str, str]]) -> Dict[str, int]:                                                                                                                         
     analysis = {                                                                                                                                                                              
@@ -555,7 +555,7 @@ def analyze_results(results: List[Dict[str, str]]) -> Dict[str, int]:
                                                                                                                                                                                               
     return analysis 
 
-def expand_topic_with_openai(topic: str) -> str:                                                                                                                                              
+def expand_topic_with_mistral(topic: str) -> str:                                                                                                                                              
     expansion_prompt = f"""                                                                                                                                                                   
     You are a professional compliance auditor. Your task is to convert a compliance checklist item into a clear, expanded technical question to be used to search in the company documents. The Expanded query should be specific and to the point without unnecessary details. It should focus on the key aspects of the checklist item and be suitable for searching in a document database.                                                                                                                                                                                     
                                                                                                                                                                                               
@@ -580,15 +580,15 @@ def expand_topic_with_openai(topic: str) -> str:
                                                                                                                                                                                               
     **Expanded question:**"""                                                                                                                                                                 
                                                                                                                                                                                               
-    response = openai_client.chat.completions.create(                                                                                                                                         
-        model="gpt-4o-mini",                                                                                                                                                                  
-        messages=[                                                                                                                                                                            
-            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                    
-            {"role": "user", "content": expansion_prompt}                                                                                                                                     
+    response = mistral_client.chat(                                                                                                                                                                                        
+        model=os.getenv("MISTRAL_MODEL"),                                                                                                                                                                                                        
+        messages=[                                                                                                                                                                                                                            
+            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                                                                    
+            {"role": "user", "content": prompt}                                                                                                                                                              
         ],
-        temperature=0                                                                                                                                                                                 
-    )                                                                                                                                                                                         
-    return response.choices[0].message.content.strip()                                                                                                                                        
+        max_tokens=500                                                                                                                                                                                                                                    
+    )                                                                                                                                                                                                                                         
+    return response.choices[0].message.content                                                                                                                                        
                                                                                                                                                                                               
 def retrieve_documents(query: str, company_name: str, top_k: int = 10) -> List[Dict]:                                                                                                                             
     # Generate embedding for the query                                                                                                                                                        
@@ -608,165 +608,152 @@ def retrieve_documents(query: str, company_name: str, top_k: int = 10) -> List[D
                                                                                                                                                                                               
     return results['matches']                                                                                                                                                                 
                                                                                                                                                                                               
-def generate_answer(query: str, documents: List[Dict]) -> str:                                                                                                                                
-    context = "\n".join([doc['metadata']['text'] for doc in documents])                                                                                                                       
-
-    if not context:
-        return "No relevant documents found to answer the question."
-
-    prompt = f"""                                                                                                                                                                             
-    You are a knowledgeable and professional assistant. Use the provided context to accurately answer questions related to the company.                                                       
-    - Answer the question directly using the available context you have.                                                                                                                      
-    - Keep the response concise and to the point.                                                                                                                                             
-    - Always return a complete, well-structured sentence.                                                                                                                                     
-    - Return answers that are direct and confident.                                                                                                                                           
-    - Do not Make up information or provide speculative answers using data outside the provided context.  
-    - If NO relevant document found you should say "I don't have enough information to answer this question".                                                                                                                           
-                                                                                                                                                                                              
-    Context:                                                                                                                                                                                  
-    {context}                                                                                                                                                                                 
-                                                                                                                                                                                              
-    Question:                                                                                                                                                                                 
-    {query}                                                                                                                                                                                   
-                                                                                                                                                                                              
-    Answer:                                                                                                                                                                                   
-    """                                                                                                                                                                                       
-                                                                                                                                                                                              
-    response = openai_client.chat.completions.create(                                                                                                                                         
-        model="gpt-4o-mini",                                                                                                                                                                  
-        messages=[                                                                                                                                                                            
-            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                    
-            {"role": "user", "content": prompt}                                                                                                                                               
+def generate_answer(query: str, documents: List[Dict]) -> str:                                                                                                                                                                                
+    context = "\n".join([doc['metadata']['text'] for doc in documents])                                                                                                                                                                       
+                                                                                                                                                                                                                                              
+    if not context:                                                                                                                                                                                                                           
+        return "No relevant documents found to answer the question."                                                                                                                                                                          
+                                                                                                                                                                                                                                              
+    prompt = f"""                                                                                                                                                                                                                             
+    You are a knowledgeable and professional assistant. Use the provided context to accurately answer questions related to the company.                                                                                                       
+    - Answer the question directly using the available context you have.                                                                                                                                                                      
+    - Keep the response concise and to the point.                                                                                                                                                                                             
+    - Always return a complete, well-structured sentence.                                                                                                                                                                                     
+    - Return answers that are direct and confident.                                                                                                                                                                                           
+    - Do not Make up information or provide speculative answers using data outside the provided context.    
+    - You should answer the query using the context you have access to, DO NOT ask for any other data/information as this is the only data you can use which is the context provided.                                                                                                                                  
+                                                                                                                                                                                                                                              
+    Context:                                                                                                                                                                                                                                  
+    {context}                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                              
+    Question:                                                                                                                                                                                                                                 
+    {query}                                                                                                                                                                                                                                   
+                                                                                                                                                                                                                                              
+    Answer:                                                                                                                                                                                                                                   
+    """                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                              
+    response = mistral_client.chat(                                                                                                                                                                                        
+        model=os.getenv("MISTRAL_MODEL"),                                                                                                                                                                                                     
+        messages=[                                                                                                                                                                                                                            
+            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                                                                    
+            {"role": "user", "content": prompt}                                                                                                                           
         ],
-        temperature=0                                                                                                                                                                                    
-    )                                                                                                                                                                                         
-    return response.choices[0].message.content.strip()                                                                                                                                        
-
-def generate_answer_for_chat(query: str, documents: List[Dict], results: str) -> str:                                                                                                                                
-    context = "\n".join([doc['metadata']['text'] for doc in documents])                                                                                                                       
-
-    if not context:
-        return "No relevant documents found to answer the question."
-
-    prompt = f"""                                                                                                                                                                             
-    You are a knowledgeable and professional assistant. Use the provided context to accurately answer questions related to the company.                                                       
-    - Answer the question directly using the available context you have.                                                                                                                      
-    - Keep the response concise and to the point.                                                                                                                                             
-    - Always return a complete, well-structured sentence.                                                                                                                                     
-    - Return answers that are direct and confident.                                                                                                                                           
-    - Do not Make up information or provide speculative answers using data outside the provided context.                                                                                                                             
-
-    Compliance Evaluation Context If asked about:                                                                                                                              
-    {results}
-
-    Context:                                                                                                                                                                                  
-    {context}                                                                                                                                                                                 
-                                                                                                                                                                                              
-    Question:                                                                                                                                                                                 
-    {query}                                                                                                                                                                                   
-                                                                                                                                                                                              
-    Answer:                                                                                                                                                                                   
-    """                                                                                                                                                                                       
-                                                                                                                                                                                              
-    response = openai_client.chat.completions.create(                                                                                                                                         
-        model="gpt-4o-mini",                                                                                                                                                                  
-        messages=[                                                                                                                                                                            
-            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                    
-            {"role": "user", "content": prompt}                                                                                                                                               
+        max_tokens=500                                                                                                                                                                                                                               
+    )                                                                                                                                                                                                                                         
+    return response.choices[0].message.content                                                                                                                                                                                                
+                                                                                                                                                                                                                                              
+def generate_answer_for_chat(query: str, documents: List[Dict], results: str) -> str:                                                                                                                                                         
+    context = "\n".join([doc['metadata']['text'] for doc in documents])                                                                                                                                                                       
+                                                                                                                                                                                                                                              
+    if not context:                                                                                                                                                                                                                           
+        return "No relevant documents found to answer the question."                                                                                                                                                                          
+                                                                                                                                                                                                                                              
+    prompt = f"""                                                                                                                                                                                                                             
+    You are a knowledgeable and professional assistant. Use the provided context to accurately answer questions related to the company.                                                                                                       
+    - Answer the question directly using the available context you have.                                                                                                                                                                      
+    - Keep the response concise and to the point.                                                                                                                                                                                             
+    - Always return a complete, well-structured sentence.                                                                                                                                                                                     
+    - Return answers that are direct and confident.                                                                                                                                                                                           
+    - Do not Make up information or provide speculative answers using data outside the provided context.                                                                                                                                      
+                                                                                                                                                                                                                                              
+    Compliance Evaluation Context If asked about:                                                                                                                                                                                             
+    {results}                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                              
+    Context:                                                                                                                                                                                                                                  
+    {context}                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                              
+    Question:                                                                                                                                                                                                                                 
+    {query}                                                                                                                                                                                                                                   
+                                                                                                                                                                                                                                              
+    Answer:                                                                                                                                                                                                                                   
+    """                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                              
+    response = mistral_client.chat(                                                                                                                                                                                        
+        model=os.getenv("MISTRAL_MODEL"),                                                                                                                                                                                                     
+        messages=[                                                                                                                                                                                                                            
+            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                                                                    
+            {"role": "user", "content": prompt}                                                                                                                
         ],
-        temperature=0                                                                                                                                                                                    
-    )                                                                                                                                                                                         
-    return response.choices[0].message.content.strip()     
+        max_tokens=500                                                                                                                                                                                                                      
+    )                                                                                                                                                                                                                                         
+    return response.choices[0].message.content
 
-def evaluate_compliance_with_openai(original_requirement: str, expanded_query: str, answer: str, documents: List[Dict]) -> Dict[str, str]:                                                                           
-    context = "\n".join([doc['metadata']['text'] for doc in documents])                                                                                                                       
-
-    if not context:
-        context = "No relevant documents found to answer the question."
-
-    compliance_prompt = f"""                                                                                                                                                                  
-    You are an expert compliance auditor with extensive experience in regulatory assessments. Your task is to evaluate whether a company's documented practices meet a specific compliance requirement.                                                                                                                                                                                  
-
-    Use the retrieved database evidence in {context} as your primary source for compliance evaluation. Cross-reference this evidence with the provided answer rather than relying on the answer alone:
-    {context}    
-    ---                                                                                                                                                          
-    COMPLIANCE REQUIREMENT: {original_requirement} 
-    ---                                                                                                                                           
-    DETAILED QUESTION: {expanded_query}        
-    ---                                                                                                                                               
-    COMPANY'S DOCUMENTED ANSWER: {answer} 
-    --- 
-    Digital Financial Technology Regulations - Legal Framework If Needed:                                                                                                                                                                 
-    {CONTEXT}                                                                                                                                                   
-
-    ---                                                                                                                                                      
-    EVALUATION CRITERIA:                                                                                                                                                                      
-    - Focus on factual evidence provided in the company's answer                                                                                                                              
-    - Consider completeness, specificity, and relevance of the response                                                                                                                       
-    - Identify gaps between what is required and what is documented                                                                                                                           
-    - If there is no in-depth evidence/implementation/documentation in the answer, **these in-depth evidences** can be submitted later upon request so far now this can be **Compliant** Normally.                                                                                                                                                                                     
-                                                                                                                                                                                              
-    COMPLIANCE STATUS OPTIONS - Choose ONE:                                                                                                                                                   
-    - "Compliant": The answer provides sufficient response to the requirement.                                                                                                                
-    - "Non-Compliant": The answer explicitly states the requirement is not met, contradicts the requirement, or contains clear evidence of non-compliance                                     
-    - "Insufficient Information": The answer lacks important and must-exist details to determine compliance status.                                                                           
-    - "Partially Compliant": The answer didn't meets the important aspects of the requirement, with specific gaps clearly identified.                                                         
-                                                                                                                                                                                              
-    CONFIDENCE LEVEL Guidelines:                                                                                                                                                              
-    - High: Clear, unambiguous evidence supports the assessment OR Evidence is present but could be more detailed or specific.                                                                
-    - Low: Assessment is based on limited or unclear information                                                                                                                              
-                                                                                                                                                                                              
-    Please analyze the answer and provide:                                                                                                                                                    
-                                                                                                                                                                                              
-    1. COMPLIANCE STATUS: [Compliant/Non-Compliant/Insufficient Information/Partially Compliant]                                                                                              
-    2. CONFIDENCE LEVEL: [High/Low]                                                                                                                                                           
-    3. REASONING: Brief explanation of your assessment focusing on what evidence supports your conclusion (2-3 sentences max)                                                                 
-    4. GAPS/RECOMMENDATIONS:                                                                                                                                                                  
-    - If Compliant: "None required" or minor suggestions for improvement                                                                                                                      
-    - If Non-Compliant: Specific actions needed to achieve compliance                                                                                                                         
-    - If Insufficient Information: What additional documentation/evidence is needed                                                                                                           
-    - If Partially Compliant: Actions needed to address identified gaps                                                                                                                       
-                                                                                                                                                                                              
-    Format your response as:                                                                                                                                                                  
-    STATUS: [Your assessment]                                                                                                                                                                 
-    CONFIDENCE: [High/Medium/Low]                                                                                                                                                             
-    REASONING: [Your reasoning here]                                                                                                                                                          
-    RECOMMENDATIONS: [Specific recommendations based on status]                                                                                                                               
-    """                                                                                                                                                                                       
-                                                                                                                                                                                              
-    response = openai_client.chat.completions.create(                                                                                                                                         
-        model="gpt-4o-mini",                                                                                                                                                                  
-        messages=[                                                                                                                                                                            
-            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                    
-            {"role": "user", "content": compliance_prompt}                                                                                                                                    
-        ],
-        temperature=0                                                                                                                                                                                    
-    )                                                                                                                                                                                         
-                                                                                                                                                                                              
-    # Parse the response                                                                                                                                                                      
-    result = response.choices[0].message.content.strip()                                                                                                                                      
-                                                                                                                                                                                              
-    # Extract structured information                                                                                                                                                          
-    lines = result.split('\n')                                                                                                                                                                
-    parsed_result = {                                                                                                                                                                         
-        "status": "Unknown",                                                                                                                                                                  
-        "confidence": "Unknown",                                                                                                                                                              
-        "reasoning": "Unable to parse response",                                                                                                                                              
-        "recommendations": "Unable to parse response"                                                                                                                                         
-    }                                                                                                                                                                                         
-                                                                                                                                                                                              
-    for line in lines:                                                                                                                                                                        
-        line = line.strip()                                                                                                                                                                   
-        if line.startswith("STATUS:"):                                                                                                                                                        
-            parsed_result["status"] = line.replace("STATUS:", "").strip()                                                                                                                     
-        elif line.startswith("CONFIDENCE:"):                                                                                                                                                  
-            parsed_result["confidence"] = line.replace("CONFIDENCE:", "").strip()                                                                                                             
-        elif line.startswith("REASONING:"):                                                                                                                                                   
-            parsed_result["reasoning"] = line.replace("REASONING:", "").strip()                                                                                                               
-        elif line.startswith("RECOMMENDATIONS:"):                                                                                                                                             
-            parsed_result["recommendations"] = line.replace("RECOMMENDATIONS:", "").strip()                                                                                                   
-                                                                                                                                                                                              
-    return parsed_result                                                                                                                                                                      
+def evaluate_compliance_with_mistral(original_requirement: str, expanded_query: str, answer: str, documents: List[Dict]) -> Dict[str, str]:                                                                                                   
+    context = "\n".join([doc['metadata']['text'] for doc in documents])                                                                                                                                                                       
+                                                                                                                                                                                                                                              
+    if not context:                                                                                                                                                                                                                           
+        context = "No relevant documents found to answer the question."                                                                                                                                                                       
+                                                                                                                                                                                                                                              
+    compliance_prompt = f"""                                                                                                                                                                                                                  
+    You are an expert compliance auditor with extensive experience in regulatory assessments. Your task is to evaluate whether a company's documented practices meet a specific compliance requirement.                                       
+                                                                                                                                                                                                                                              
+    Use the retrieved database evidence in the context provided as your primary source for compliance evaluation. Cross-reference this evidence with the provided answer rather than relying on the answer alone:                             
+    {context}                                                                                                                                                                                                                                 
+    ---                                                                                                                                                                                                                                       
+    COMPLIANCE REQUIREMENT: {original_requirement}                                                                                                                                                                                            
+    ---                                                                                                                                                                                                                                       
+    DETAILED QUESTION: {expanded_query}                                                                                                                                                                                                       
+    ---                                                                                                                                                                                                                                       
+    COMPANY'S DOCUMENTED ANSWER: {answer}                                                                                                                                                                                                     
+    ---                                                                                                                                                                                                                                       
+    Digital Financial Technology Regulations - Legal Framework to use only If Needed:                                                                                                                                                         
+    {CONTEXT}                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                              
+    ---                                                                                                                                                                                                                                       
+    EVALUATION CRITERIA:                                                                                                                                                                                                                      
+    - Focus on factual evidence provided in the company's answer                                                                                                                                                                              
+    - Consider completeness, specificity, and relevance of the response                                                                                                                                                                       
+    - Identify gaps between what is required and what is documented                                                                                                                                                                           
+    - If there is no in-depth evidence/implementation/documentation in the answer, **these in-depth evidences** can be submitted later upon request so far now this can be **Compliant** Normally.                                            
+                                                                                                                                                                                                                                              
+    COMPLIANCE STATUS OPTIONS - Choose ONE:                                                                                                                                                                                                   
+    - "Compliant": The answer provides sufficient response to the requirement.                                                                                                                                                                
+    - "Non-Compliant": The answer explicitly states the requirement is not met, contradicts the requirement, or contains clear evidence of non-compliance                                                                                     
+    - "Insufficient Information": The answer lacks important and must-exist details to determine compliance status.                                                                                                                           
+    - "Partially Compliant": The answer didn't meets the important aspects of the requirement, with specific gaps clearly identified.                                                                                                         
+                                                                                                                                                                                                                                              
+    CONFIDENCE LEVEL Guidelines:                                                                                                                                                                                                              
+    - High: Clear, unambiguous evidence supports the assessment OR Evidence is present but could be more detailed or specific.                                                                                                                
+    - Low: Assessment is based on limited or unclear information                                                                                                                                                                              
+                                                                                                                                                                                                                                              
+    Please analyze the answer and provide the response in JSON format with the following structure:   
+    JSON Structure: DO NOT EVER ADD JSON TAGS IN YOUR RESPONSE, JUST RETURN THE JSON OBJECT DIRECTLY WITHOUT ANY ADDITIONAL TEXT OR FORMATTING.                                                                                                                                        
+    {{                                                                                                                                                                                                                                        
+        "status": "Compliant/Non-Compliant/Insufficient Information/Partially Compliant",                                                                                                                                                     
+        "confidence": "High/Low",                                                                                                                                                                                                             
+        "reasoning": "Brief explanation of your assessment focusing on what evidence supports your conclusion (2-3 sentences max)",                                                                                                           
+        "recommendations": "If Compliant: 'None required' or minor suggestions for improvement. If Non-Compliant: Specific actions needed to achieve compliance. If Insufficient Information: What additional documentation/evidence is needed. If Partially Compliant: Actions needed to address identified gaps" # This should be a single string with no newlines or bullet points discussing the recommendation needed to be applied.                                                                                                                                                                    
+    }}                                                                                                                                                                                                                                        
+    """                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                              
+    response = mistral_client.chat(                                                                                                                                                                                                           
+        model=os.getenv("MISTRAL_MODEL"),                                                                                                                                                                                                     
+        messages=[                                                                                                                                                                                                                            
+            {"role": "system", "content": "You are a helpful assistant."},                                                                                                                                                                    
+            {"role": "user", "content": compliance_prompt}                                                                                                                                                                                    
+        ],                                                                                                                                                                                                                                    
+        max_tokens=500                                                                                                                                                                                                                        
+    )                                                                                                                                                                                                                                         
+                                                                                                                                                                                                                                              
+    # Parse the response                                                                                                                                                                                                                      
+    result = response.choices[0].message.content                                                                                                                                                                                              
+                                                                                                                                                                                                                                              
+    # Extract JSON content from code blocks if present                                                                                                                                                                                        
+    if result.startswith("```json") and result.endswith("```"):                                                                                                                                                                               
+        result = result[7:-3].strip()                                                                                                                                                                                                         
+                                                                                                                                                                                                                                              
+    # Extract structured information                                                                                                                                                                                                          
+    try:                                                                                                                                                                                                                                      
+        parsed_result = json.loads(result)                                                                                                                                                                                                    
+    except json.JSONDecodeError:                                                                                                                                                                                                              
+        parsed_result = {                                                                                                                                                                                                                     
+            "status": "Unknown",                                                                                                                                                                                                              
+            "confidence": "Unknown",                                                                                                                                                                                                          
+            "reasoning": "Unable to parse response",                                                                                                                                                                                          
+            "recommendations": "Unable to parse response"                                                                                                                                                                                     
+        }                                                                                                                                                                                                                                     
+                                                                                                                                                                                                                                              
+    return parsed_result                                                                                                                                                                                       
                                                                                                                                                                                               
 def process_excel_and_evaluate(filepath: str, company_name: str, save_expanded_queries: bool = True, csv_output_path: str = None) -> List[Dict[str, str]]:
     """
@@ -796,7 +783,7 @@ def process_excel_and_evaluate(filepath: str, company_name: str, save_expanded_q
         # Concatenate Description and IDENTIFY columns
         # combined_topic = f"{topic} {identify}"
         
-        # expanded_query = expand_topic_with_openai(combined_topic)
+        # expanded_query = expand_topic_with_mistral(combined_topic)
         
         print("=============")
         print("Topic: ", topic)
@@ -806,14 +793,17 @@ def process_excel_and_evaluate(filepath: str, company_name: str, save_expanded_q
         answer = generate_answer(query, documents)
         
         print("Answer: ", answer)
-        print("=============")
         
-        compliance_evaluation = evaluate_compliance_with_openai(
+        
+        compliance_evaluation = evaluate_compliance_with_mistral(
             original_requirement=topic,
             expanded_query=query,
             answer=answer,
             documents=documents
         )
+
+        print("Status: ", compliance_evaluation["status"])
+        print("=============")
         
         # Store data for CSV export
         # expanded_queries_data.append({

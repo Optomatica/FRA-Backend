@@ -16,11 +16,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker                                                                                                                                                                                                       
 from models import User, Company, File                                                                                                                                                                                                        
 from passlib.context import CryptContext    
-from dotenv import load_dotenv                                                                                                                                                                
+from dotenv import load_dotenv         
+from mistralai.client import MistralClient                                                                                                                                                       
 
 
 load_dotenv()
-
+mistral_client = MistralClient(api_key=os.getenv("MISTRAL_API_KEY"))
 # Database setup                                                                                                                                                                                                                              
 DATABASE_URL = os.getenv("DATABASE_URL")                                                                                                                                                                              
 engine = create_engine(DATABASE_URL)                                                                                                                                                                                                          
@@ -128,7 +129,7 @@ def process_files_task(file_paths, company_name):
         print("Starting compliance evaluation...")                                                                                                                                                                                            
                                                                                                                                                                                                                                               
         # Process the compliance evaluation                                                                                                                                                                                                   
-        # input_file = "/home/abeltagy/Optomatica/FRA_Project/BaselinesToTest.csv"                                                                                                                                                            
+        # input_file = "/home/abeltagy/Optomatica/FRA_Project/data/.~lock.expanded_queries_Baselines_optomatica_20250812_101757_copy.csv#"                                                                                                                                                            
         input_file = '/app/data/data/expanded_queries_Baselines_optomatica_20250812_101757.csv'  # Adjusted for Docker                                                                                                                      
         results = process_excel_and_evaluate(input_file, company_name)                                                                                                                                                                        
                                                                                                                                                                                                                                               
