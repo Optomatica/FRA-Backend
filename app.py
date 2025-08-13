@@ -15,14 +15,18 @@ import dotenv
 from sqlalchemy import create_engine                                                                                                                                                                                                          
 from sqlalchemy.orm import sessionmaker                                                                                                                                                                                                       
 from models import User, Company, File                                                                                                                                                                                                        
-from passlib.context import CryptContext                                                                                                                                                                                                      
-                                                                                                                                                                                                                                              
+from passlib.context import CryptContext    
+from dotenv import load_dotenv                                                                                                                                                                
+
+
+load_dotenv()
+
 # Database setup                                                                                                                                                                                                                              
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/fra"                                                                                                                                                                              
+DATABASE_URL = os.getenv("DATABASE_URL")                                                                                                                                                                              
 engine = create_engine(DATABASE_URL)                                                                                                                                                                                                          
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)                                                                                                                                                                   
 
-SECRET_KEY = "dasdgajdgjasgdjgasjgdjhasd-ashdlkashkjdhsakhdkd-adhaskhdkjashdkhsakjdhsad-a87s6d87a8sdhs87atda8sgdasugd78asds7atd78sa68dagsduasgdugsa"
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"                                                                                                                                                                                                                           
 ACCESS_TOKEN_EXPIRE_MINUTES = 30  
 

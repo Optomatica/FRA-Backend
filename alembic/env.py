@@ -4,7 +4,11 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool                                                                                                                                                                                                                   
 from alembic import context                                                                                                                                                                                                                   
 import sys                                                                                                                                                                                                                                    
-import os                                                                                                                                                                                                                                     
+import os  
+from dotenv import load_dotenv                                                                                                                                                                
+
+
+load_dotenv()
                                                                                                                                                                                                                                               
 # Add your project directory to the Python path                                                                                                                                                                                               
 sys.path.append(os.getcwd())                                                                                                                                                                                                                  
@@ -43,7 +47,11 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = os.getenv("DATABASE_URL") 
+
+    if url and url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -62,6 +70,15 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+
+    database_url = os.getenv("DATABASE_URL")
+
+    if database_url and database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set.")
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
