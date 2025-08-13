@@ -23,11 +23,11 @@ COPY data/ /app/data/
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
+ENV PORT=8002
 ENV PYTHONPATH=/app
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8002
 
 # Create a startup script that runs migrations then starts the app
 RUN echo '#!/bin/bash\n\
@@ -35,7 +35,7 @@ set -e\n\
 echo "Running Alembic migrations..."\n\
 alembic upgrade head\n\
 echo "Starting application..."\n\
-exec python -m uvicorn app:app --host 0.0.0.0 --port 8000' > /app/start.sh
+exec python -m uvicorn app:app --host 0.0.0.0 --port 8002' > /app/start.sh
 
 # Make the script executable
 RUN chmod +x /app/start.sh
