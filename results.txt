@@ -1,0 +1,22 @@
+# First Sheet
+    Total Requirements: 115
+    Compliant: 71
+    Non-Compliant: 9
+    Insufficient Information: 32
+    Partially Compliant: 2
+
+
+# Second Sheet
+    Total Requirements: 169
+    Compliant: 63
+    Non-Compliant: 4
+    Insufficient Information: 95
+    Partially Compliant: 2
+
+
+# Third Sheet
+    Total Requirements: 25
+    Compliant: 14
+    Non-Compliant: 1
+    Insufficient Information: 10
+    Partially Compliant: 0
