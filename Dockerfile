@@ -1,5 +1,4 @@
 FROM python:3.10-slim
-
 WORKDIR /app
 
 # Install all system dependencies in one layer
@@ -30,5 +29,16 @@ ENV PYTHONPATH=/app
 # Expose port
 EXPOSE 8000
 
-# Start the application
-CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Create a startup script that runs migrations then starts the app
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "Running Alembic migrations..."\n\
+alembic upgrade head\n\
+echo "Starting application..."\n\
+exec python -m uvicorn app:app --host 0.0.0.0 --port 8000' > /app/start.sh
+
+# Make the script executable
+RUN chmod +x /app/start.sh
+
+# Start the application with migrations
+CMD ["/app/start.sh"]
