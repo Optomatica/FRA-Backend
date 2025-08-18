@@ -65,16 +65,20 @@ def run_migrations_online() -> None:
     if not database_url:
         raise ValueError("DATABASE_URL environment variable is not set.")
     
-    # Option 1: Use create_engine directly (recommended)
-    connectable = create_engine(database_url, poolclass=pool.NullPool)
-    
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+    # Option 1: Use create_engine directly (recommended)                                                                                                                                      
+    connectable = create_engine(                                                                                                                                                              
+        database_url,                                                                                                                                                                         
+        poolclass=pool.NullPool,                                                                                                                                                              
+        connect_args={"sslmode": "disable"} # Add this line                                                                                                                                   
+    )                                                                                                                                                                                         
+                                                                                                                                                                                              
+    with connectable.connect() as connection:                                                                                                                                                 
+        context.configure(                                                                                                                                                                    
+            connection=connection,                                                                                                                                                            
+            target_metadata=target_metadata                                                                                                                                                   
+        )                                                                                                                                                                                     
+        with context.begin_transaction():                                                                                                                                                     
+            context.run_migrations() 
 
 if context.is_offline_mode():
     run_migrations_offline()
