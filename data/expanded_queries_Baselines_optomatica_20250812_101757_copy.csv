@@ -1,0 +1,3 @@
+original_description,identify,combined_topic,expanded_query,results_guide,compliance_status,confidence_level
+Baseline-COMP: DB Server exist,,Baseline-COMP: DB Server exist nan,Does the company have a documented database server in place that meets the requirements outlined in the IT Governance Framework and Technology Risk Management Framework?,0 (No) or 1 (Yes) ,Compliant,High
+Baseline-COMP: DB Server with licensed OS,,Baseline-COMP: DB Server with licensed OS nan,Is the database server operating with a licensed operating system as per the compliance requirements outlined in the Baseline-COMP standards?,0 (No) or 1 (Yes) ,Compliant,High

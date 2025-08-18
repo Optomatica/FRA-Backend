@@ -23,9 +23,18 @@ from mistralai.client import MistralClient
 load_dotenv()
 mistral_client = MistralClient(api_key=os.getenv("MISTRAL_API_KEY"))
 # Database setup                                                                                                                                                                                                                              
-DATABASE_URL = os.getenv("DATABASE_URL")                                                                                                                                                                              
-engine = create_engine(DATABASE_URL)                                                                                                                                                                                                          
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)                                                                                                                                                                   
+DATABASE_URL = os.getenv("DATABASE_URL")                                                                                                                                                      
+                                                                                                                                                                                              
+# Ensure the DATABASE_URL uses 'postgresql://' for psycopg2 compatibility if it's 'postgres://'                                                                                               
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):                                                                                                                                   
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)                                                                                                                    
+                                                                                                                                                                                              
+engine = create_engine(                                                                                                                                                                       
+    DATABASE_URL,                                                                                                                                                                             
+    pool_recycle=3600,  # Recycle connections after 1 hour (3600 seconds) to prevent stale connections                                                                                        
+    connect_args={"sslmode": "disable"} # Explicitly disable SSL for local development                                                                                                        
+)                                                                                                                                                                                             
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)                                                                                                                                                              
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"                                                                                                                                                                                                                           
@@ -129,7 +138,7 @@ def process_files_task(file_paths, company_name):
         print("Starting compliance evaluation...")                                                                                                                                                                                            
                                                                                                                                                                                                                                               
         # Process the compliance evaluation                                                                                                                                                                                                   
-        # input_file = "/home/abeltagy/Optomatica/FRA_Project/data/.~lock.expanded_queries_Baselines_optomatica_20250812_101757_copy.csv#"                                                                                                                                                            
+        # input_file = "/home/abeltagy/Optomatica/FRA_Project/data/expanded_queries_Baselines_optomatica_20250812_101757_copy.csv"                                                                                                                                                            
         input_file = '/app/data/expanded_queries_Baselines_optomatica_20250812_101757.csv'  # Adjusted for Docker                                                                                                                      
         results = process_excel_and_evaluate(input_file, company_name)                                                                                                                                                                        
                                                                                                                                                                                                                                               
@@ -163,10 +172,10 @@ app = FastAPI(title="FRA API", description="API for document processing")
                                                                                                                                                                                                                                               
 app.add_middleware(                                                                                                                                                                                                                           
     CORSMiddleware,                                                                                                                                                                                                                           
-    allow_origins=["*"],  # Allows all origins                                                                                                                                                                                                
+    allow_origins=["*"],                                                                                                                                                                                               
     allow_credentials=True,                                                                                                                                                                                                                   
-    allow_methods=["*"],  # Allows all methods                                                                                                                                                                                                
-    allow_headers=["*"],  # Allows all headers                                                                                                                                                                                                
+    allow_methods=["*"],                                                                                                                                                                                               
+    allow_headers=["*"],                                                                                                                                                                                            
 )                                                                                                                                                                                                                                             
                                                                                                                                                                                                                                               
 # Load environment variables                                                                                                                                                                                                                  
